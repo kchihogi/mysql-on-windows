@@ -17,8 +17,10 @@ function LogWarn([String]$Message)
 }
 function LogTrace([String]$Message)
 {
-    $Message = (Get-Date -format s) + ": " + $Message
-    Write-Host $Message -ForegroundColor Blue
+    if ($null -eq $env:VERBOSE -or $env:VERBOSE -eq "true") {
+        $Message = (Get-Date -format s) + ": " + $Message
+        Write-Host $Message -ForegroundColor Blue
+    }
 }
 
 function LaunchProcess([string]$module, [String[]]$arg, [String]$working_dir)
@@ -144,19 +146,35 @@ function ChangePassword {
     }
 }
 
+function ChangePriviles {
+    param (
+        [ref]$ret
+    )
+    $arguments=@("-u", "root", "-p$($env:MYSQL_ROOT_PASSWORD)", "-e" , "`"CREATE USER 'root'@'%' IDENTIFIED BY '$($env:MYSQL_ROOT_PASSWORD)';GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;FLUSH PRIVILEGES;`"")
+    $process = LaunchProcess -module "mysql" -arg $arguments -working_dir (Get-Location)
+    $code=0
+    JoinProcess $process ([ref]$code)
+    if ($code -ne 0) {
+        LogError "Failed to mysql privileges change. exit code:$($code)"
+        $ret.Value = $code
+        return
+    }
+    LogInfo "MySQL root user privileges changed successfully."
+}
+
 function Main([ref] $ret) {
     $ret.Value = 0
 
     # check if this is a first time installation
     $first_time = $false
-    if ($env:MYSQL_FIRST_TIME_INSTALLATION -eq $null -or $env:MYSQL_FIRST_TIME_INSTALLATION -eq "true") {
+    if ($null -eq $env:MYSQL_FIRST_TIME_INSTALLATION -or $env:MYSQL_FIRST_TIME_INSTALLATION -eq "true") {
         $first_time = $true
     }
 
     if ($first_time) {
         # stop MySQL Service
         $service = Get-Service -Name "MySQL" -ErrorAction SilentlyContinue
-        if ($service -ne $null) {
+        if ($null -ne $service) {
             Stop-Service -Name "MySQL"
             LogInfo "MySQL Service stopped."
         }
@@ -170,14 +188,14 @@ function Main([ref] $ret) {
 
         # stop mysqld process
         $process = Get-Process -Name "mysqld" -ErrorAction SilentlyContinue
-        if ($process -ne $null) {
+        if ($null -ne $process) {
             Stop-Process -Name "mysqld" -Force
             LogInfo "mysqld process stopped."
         }
 
         # wait for mysqld process stop
         $process = Get-Process -Name "mysqld" -ErrorAction SilentlyContinue
-        while ($process -ne $null) {
+        while ($null -ne $process) {
             Start-Sleep -Seconds 1
             $process = Get-Process -Name "mysqld" -ErrorAction SilentlyContinue
         }
@@ -209,6 +227,11 @@ function Main([ref] $ret) {
             ChangePassword ([ref]$ret)
             if ($ret.Value -ne 0) {
                 LogError "Failed to ChangePassword.($($ret.Value))"
+                return
+            }
+            ChangePriviles ([ref]$ret)
+            if ($ret.Value -ne 0) {
+                LogError "Failed to ChangePriviles.($($ret.Value))"
                 return
             }
         }
