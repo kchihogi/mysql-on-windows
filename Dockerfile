@@ -1,6 +1,8 @@
 ARG BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:6.0-windowsservercore-ltsc2019
 FROM ${BASE_IMAGE}
 
+ENV chocolateyVersion=1.4.0
+
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 ARG MYSQL_VERSION=8.0.27
